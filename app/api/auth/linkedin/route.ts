@@ -14,7 +14,7 @@ function getScopes(): string {
 export async function GET(request: NextRequest) {
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? request.nextUrl.origin;
-  const redirectUri = `${baseUrl}/api/auth/linkedin/callback`;
+  const redirectUri = `${baseUrl}api/auth/linkedin/callback`;
 
   if (!clientId) {
     return NextResponse.redirect(
