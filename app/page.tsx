@@ -1,99 +1,100 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import PostGenerator from "@/components/PostGenerator";
 
-export default function HomePage() {
-  const [prompt, setPrompt] = useState("");
-  const [post, setPost] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+const ERROR_MESSAGES: Record<string, string> = {
+  linkedin_not_configured:
+    "LinkedIn app credentials are not set. Add LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET to .env.",
+  invalid_scope_error:
+    "Your LinkedIn app doesn't have the right permissions. In the LinkedIn Developer Portal, open your app → Products → add \"Share on LinkedIn\". Wait for it to move to \"Added products\" (can take a few minutes), then try again.",
+  access_denied: "You declined the LinkedIn connection.",
+  missing_code_or_config: "Connection failed. Missing code or server config.",
+  token_exchange_failed: "Could not complete LinkedIn connection.",
+  no_access_token: "LinkedIn did not return an access token.",
+};
 
-  const handleGenerate = async () => {
-    if (!prompt) return;
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const [connected, setConnected] = useState<boolean | null>(null);
 
-    setLoading(true);
-    setError("");
-    setPost("");
+  const errorCode = searchParams.get("error");
 
-    try {
-      const res = await fetch("/api/generate-post", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
+  const errorMessage =
+    errorCode && ERROR_MESSAGES[errorCode]
+      ? ERROR_MESSAGES[errorCode]
+      : errorCode
+      ? "Something went wrong. Try again."
+      : null;
 
-      const data = await res.json();
+  useEffect(() => {
+    fetch("/api/auth/status")
+      .then((res) => res.json())
+      .then((data) => setConnected(data.connected))
+      .catch(() => setConnected(false));
+  }, []);
 
-      if (!res.ok) {
-        setError(data.error || "Something went wrong");
-      } else {
-        setPost(data.post);
-      }
-    } catch (err) {
-      setError("Network error: " + err);
-    }
-
-    setLoading(false);
-  };
-
-  const handleConnectLinkedIn = () => {
-    alert("Connect LinkedIn functionality placeholder");
-  };
-
-  const handlePublish = () => {
-    alert("Publish to LinkedIn functionality placeholder");
+  const handleConnect = () => {
+    window.location.href = "/api/auth/linkedin";
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-6">
-      <header className="max-w-2xl w-full text-center mb-8">
-        <h1 className="text-3xl font-bold mb-2">AI LinkedIn Post Agent</h1>
-        <p className="text-gray-600 mb-4">
-          Generate and preview LinkedIn posts using AI.
-        </p>
-        <button
-          onClick={handleConnectLinkedIn}
-          className="bg-gray-800 text-white font-semibold py-2 px-4 rounded hover:bg-gray-700"
-        >
-          Connect LinkedIn
-        </button>
-      </header>
+    <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-xl text-center space-y-8">
+        <header className="space-y-2">
+          <h1 className="text-2xl font-semibold text-neutral-900 tracking-tight">
+            AI LinkedIn Post Agent
+          </h1>
+          <p className="text-sm text-neutral-500">
+            Generate and publish LinkedIn posts with AI.
+          </p>
+        </header>
 
-      <main className="max-w-2xl w-full flex flex-col gap-4">
-        <textarea
-          className="w-full p-3 border rounded focus:outline-none focus:ring-2 focus:ring-gray-400"
-          rows={5}
-          placeholder="Enter your LinkedIn post prompt..."
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-        />
-
-        <button
-          onClick={handleGenerate}
-          disabled={loading}
-          className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-4 rounded disabled:opacity-50"
-        >
-          {loading ? "Generating..." : "Generate Post"}
-        </button>
-
-        {error && <p className="text-red-500">{error}</p>}
-
-        {post && (
-          <div className="border rounded p-4 bg-gray-50">
-            <h2 className="font-semibold mb-2">Preview:</h2>
-            <p className="whitespace-pre-line">{post}</p>
-
-            <button
-              onClick={handlePublish}
-              className="mt-4 bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-4 rounded"
-            >
-              Publish to LinkedIn
-            </button>
+        {errorMessage && (
+          <div
+            role="alert"
+            className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            {errorMessage}
           </div>
         )}
-      </main>
+
+        {connected === null ? (
+          <div className="h-11 w-48 rounded-lg bg-neutral-200 animate-pulse mx-auto" />
+        ) : connected ? (
+          <div className="w-full space-y-6 rounded-xl border border-neutral-200 bg-white p-6 text-left">
+            <div className="flex items-center gap-2 text-emerald-600">
+              <span className="text-lg">✓</span>
+              <span className="text-sm font-medium">LinkedIn connected</span>
+            </div>
+
+            <PostGenerator />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleConnect}
+            className="h-11 px-6 rounded-lg bg-[#0A66C2] text-white text-sm font-medium hover:bg-[#004182] transition-colors"
+          >
+            Connect LinkedIn
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-// end
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+          <div className="h-11 w-48 rounded-lg bg-neutral-200 animate-pulse" />
+        </div>
+      }
+    >
+      <HomeContent />
+    </Suspense>
+  );
+}
