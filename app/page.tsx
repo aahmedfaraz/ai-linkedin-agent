@@ -69,9 +69,29 @@ function HomeContent() {
     }
   };
 
-  const handlePublish = () => {
-    // Placeholder – wire to /api/publish-post when ready
-    alert("Publish to LinkedIn functionality placeholder");
+  const handlePublish = async () => {
+    if (!post) return;
+
+    try {
+      const res = await fetch("/api/publish-post", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text: post }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Failed to publish post");
+        return;
+      }
+
+      alert("Posted to LinkedIn 🎉");
+    } catch (err) {
+      alert("Network error while publishing");
+    }
   };
 
   return (
