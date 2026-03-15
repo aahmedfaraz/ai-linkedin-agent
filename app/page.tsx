@@ -28,10 +28,6 @@ function HomeContent() {
   const [finalDraft, setFinalDraft] = useState<string>(""); // last draft
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // confirm publish
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [publishing, setPublishing] = useState(false); // optional: disable button while publishing
-
   const errorCode = searchParams.get("error");
   const errorMessage =
     errorCode && ERROR_MESSAGES[errorCode]
@@ -116,20 +112,12 @@ function HomeContent() {
         return;
       }
 
-      // When AI published the post (e.g. user said "publish it"), show assistant's reply and success
-      const assistantContent = data.published
-        ? (data.assistantMessage ?? "I've published your post to LinkedIn!")
-        : (data.post ?? "");
-
       setMessages([
         ...updatedMessages,
-        { role: "assistant", content: assistantContent },
+        { role: "assistant", content: data.post ?? "" },
       ]);
-      setFinalDraft(data.post ?? finalDraft);
+      setFinalDraft(data.post ?? ""); // ✅ Save as latest draft
       setInstruction("");
-      if (data.published) {
-        alert("Posted to LinkedIn 🎉");
-      }
     } catch {
       setGenerateError("Network error");
     } finally {
@@ -137,8 +125,63 @@ function HomeContent() {
     }
   };
 
+  /** On send: detect intent (publish vs improve). If publish, call publish API; else improve. */
+  const handleSendInstruction = async () => {
+    if (!instruction.trim() || messages.length === 0) return;
+
+    setLoading(true);
+    setGenerateError("");
+
+    try {
+      const intentRes = await fetch("/api/chat-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userMessage: instruction.trim() }),
+      });
+      const intentData = await intentRes.json();
+      const intent = intentRes.ok && intentData.intent === "publish" ? "publish" : "improve";
+
+      if (intent === "publish") {
+        setMessages((m) => [...m, { role: "user", content: instruction.trim() }]);
+        setInstruction("");
+
+        const res = await fetch("/api/publish-post", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: finalDraft }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: `Failed to publish: ${data.error || "Unknown error"}` },
+          ]);
+        } else {
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", content: "I've published your post to LinkedIn." },
+          ]);
+          alert("Posted to LinkedIn 🎉");
+        }
+      } else {
+        await handleImprove();
+      }
+    } catch {
+      setGenerateError("Network error");
+      setMessages((m) => [
+        ...m,
+        { role: "user", content: instruction },
+        { role: "assistant", content: "Something went wrong. Please try again." },
+      ]);
+      setInstruction("");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handlePublish = async () => {
-    if (!finalDraft || publishing) return;
+    if (!finalDraft) return; // make sure a draft exists
 
     try {
       const res = await fetch("/api/publish-post", {
@@ -248,58 +291,19 @@ function HomeContent() {
                 <textarea
                   className="w-full p-2 border border-neutral-200 rounded-lg"
                   rows={2}
-                  placeholder="Ask the AI to improve the post, or say “looks good, publish it” to publish..."
+                  placeholder="Ask to improve the post, or say e.g. “looks good, publish it” to post to LinkedIn"
                   value={instruction}
                   onChange={(e) => setInstruction(e.target.value)}
                 />
-                <button
-                  onClick={handleImprove}
-                  disabled={loading}
-                  className="h-10 px-4 rounded-lg bg-neutral-700 text-white text-sm hover:bg-neutral-600 disabled:opacity-50"
-                >
-                  Improve Post
-                </button>
-              </div>
-
               <button
-                type="button"
-                onClick={() => setShowConfirm(true)}
-                disabled={publishing}
-                className="h-10 px-5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-500 disabled:opacity-50 transition-colors mt-2"
+                onClick={handleSendInstruction}
+                disabled={loading}
+                className="h-10 px-4 rounded-lg bg-neutral-700 text-white text-sm hover:bg-neutral-600 disabled:opacity-50"
               >
-                {publishing ? "Publishing..." : "Publish to LinkedIn"}
+                Send
               </button>
-
-              {showConfirm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-lg p-6 max-w-sm w-full space-y-4">
-                    <h3 className="text-lg font-semibold">Confirm Publish</h3>
-                    <p>Are you sure you want to publish this post to LinkedIn?</p>
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => setShowConfirm(false)}
-                        className="px-4 py-2 rounded-lg border border-neutral-300 text-sm"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={async () => {
-                          setShowConfirm(false);
-                          setPublishing(true);
-                          await handlePublish();
-                          setPublishing(false);
-                        }}
-                        className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm hover:bg-green-500"
-                      >
-                        Yes, Publish
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
-
-
           )}
         </main>
       </div>
