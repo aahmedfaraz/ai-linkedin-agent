@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import type { ChatMessage } from "@/lib/types/chat";
 
 const ERROR_MESSAGES: Record<string, string> = {
   linkedin_not_configured:
@@ -18,9 +19,14 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const [connected, setConnected] = useState<boolean | null>(null);
   const [prompt, setPrompt] = useState("");
-  const [post, setPost] = useState("");
   const [loading, setLoading] = useState(false);
   const [generateError, setGenerateError] = useState("");
+
+  // Chat state
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [instruction, setInstruction] = useState("");
+  const [finalDraft, setFinalDraft] = useState<string>(""); // last draft
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const errorCode = searchParams.get("error");
   const errorMessage =
@@ -30,6 +36,12 @@ function HomeContent() {
         ? "Something went wrong. Try again."
         : null;
 
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Check LinkedIn connection
   useEffect(() => {
     fetch("/api/auth/status")
       .then((res) => res.json())
@@ -46,13 +58,16 @@ function HomeContent() {
 
     setLoading(true);
     setGenerateError("");
-    setPost("");
+    setMessages([]);
+    setInstruction("");
+
+    const newMessages: ChatMessage[] = [{ role: "user", content: prompt }];
 
     try {
       const res = await fetch("/api/generate-post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ messages: newMessages }),
       });
 
       const data = await res.json();
@@ -60,25 +75,64 @@ function HomeContent() {
       if (!res.ok) {
         setGenerateError(data.error || "Something went wrong");
       } else {
-        setPost(data.post ?? "");
+        setMessages([
+          ...newMessages,
+          { role: "assistant", content: data.post ?? "" },
+        ]);
+        setFinalDraft(data.post ?? ""); // ✅ Save as latest draft
       }
-    } catch (err) {
+    } catch {
       setGenerateError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleImprove = async () => {
+    if (!instruction || messages.length === 0) return;
+
+    setLoading(true);
+
+    const updatedMessages: ChatMessage[] = [
+      ...messages,
+      { role: "user", content: instruction },
+    ];
+
+    try {
+      const res = await fetch("/api/generate-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: updatedMessages }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setGenerateError(data.error || "Something went wrong");
+        return;
+      }
+
+      setMessages([
+        ...updatedMessages,
+        { role: "assistant", content: data.post ?? "" },
+      ]);
+      setFinalDraft(data.post ?? ""); // ✅ Save as latest draft
+      setInstruction("");
+    } catch {
+      setGenerateError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handlePublish = async () => {
-    if (!post) return;
+    if (!finalDraft) return; // make sure a draft exists
 
     try {
       const res = await fetch("/api/publish-post", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text: post }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: finalDraft }),
       });
 
       const data = await res.json();
@@ -89,7 +143,7 @@ function HomeContent() {
       }
 
       alert("Posted to LinkedIn 🎉");
-    } catch (err) {
+    } catch {
       alert("Network error while publishing");
     }
   };
@@ -155,14 +209,50 @@ function HomeContent() {
             <p className="text-sm text-red-600">{generateError}</p>
           )}
 
-          {post && (
+          {/* Chat-based post preview */}
+          {messages.length > 0 && (
             <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-4">
-              <h2 className="text-sm font-semibold text-neutral-700">Preview</h2>
-              <p className="text-neutral-800 whitespace-pre-line">{post}</p>
+              <h2 className="text-sm font-semibold text-neutral-700">Post Chat History</h2>
+
+              <div className="space-y-3 max-h-96 overflow-y-auto p-2 border border-neutral-100 rounded-lg bg-gray-50">
+                {messages.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`inline-block p-3 rounded-lg max-w-[80%] break-words whitespace-pre-wrap ${
+                        msg.role === "user" ? "bg-blue-200 text-black" : "bg-gray-100 text-neutral-800"
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+
+              <div className="flex flex-col gap-2 mt-2">
+                <textarea
+                  className="w-full p-2 border border-neutral-200 rounded-lg"
+                  rows={2}
+                  placeholder="Ask the AI to improve the post..."
+                  value={instruction}
+                  onChange={(e) => setInstruction(e.target.value)}
+                />
+                <button
+                  onClick={handleImprove}
+                  disabled={loading}
+                  className="h-10 px-4 rounded-lg bg-neutral-700 text-white text-sm hover:bg-neutral-600 disabled:opacity-50"
+                >
+                  Improve Post
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={handlePublish}
-                className="h-10 px-5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-500 transition-colors"
+                className="h-10 px-5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-500 transition-colors mt-2"
               >
                 Publish to LinkedIn
               </button>

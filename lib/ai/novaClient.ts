@@ -1,4 +1,6 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import type { ChatMessage } from "@/lib/types/chat";
+
 
 const client = new BedrockRuntimeClient({
   region: process.env.AWS_REGION,
@@ -8,7 +10,8 @@ const client = new BedrockRuntimeClient({
   },
 });
 
-export async function generateWithNova(prompt: string) {
+
+export async function generateWithNova(prompt: ChatMessage[]) {
 
   const body = JSON.stringify({
     messages: [
