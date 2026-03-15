@@ -2,18 +2,17 @@ import { NextResponse } from "next/server";
 import { generateLinkedInPost } from "@/lib/ai/aiProvider";
 
 export async function POST(req: Request) {
-
   const body = await req.json();
-  const prompt = body.prompt;
+  const messages = body.messages;
 
-  if (!prompt) {
+  if (!messages || !Array.isArray(messages)) {
     return NextResponse.json(
-      { error: "Prompt is required" },
+      { error: "messages are required" },
       { status: 400 }
     );
   }
 
-  const post = await generateLinkedInPost(prompt);
+  const post = await generateLinkedInPost(messages);
 
   return NextResponse.json({
     post
