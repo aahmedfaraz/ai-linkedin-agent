@@ -28,6 +28,10 @@ function HomeContent() {
   const [finalDraft, setFinalDraft] = useState<string>(""); // last draft
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // confirm publish
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [publishing, setPublishing] = useState(false); // optional: disable button while publishing
+
   const errorCode = searchParams.get("error");
   const errorMessage =
     errorCode && ERROR_MESSAGES[errorCode]
@@ -112,12 +116,20 @@ function HomeContent() {
         return;
       }
 
+      // When AI published the post (e.g. user said "publish it"), show assistant's reply and success
+      const assistantContent = data.published
+        ? (data.assistantMessage ?? "I've published your post to LinkedIn!")
+        : (data.post ?? "");
+
       setMessages([
         ...updatedMessages,
-        { role: "assistant", content: data.post ?? "" },
+        { role: "assistant", content: assistantContent },
       ]);
-      setFinalDraft(data.post ?? ""); // ✅ Save as latest draft
+      setFinalDraft(data.post ?? finalDraft);
       setInstruction("");
+      if (data.published) {
+        alert("Posted to LinkedIn 🎉");
+      }
     } catch {
       setGenerateError("Network error");
     } finally {
@@ -126,7 +138,7 @@ function HomeContent() {
   };
 
   const handlePublish = async () => {
-    if (!finalDraft) return; // make sure a draft exists
+    if (!finalDraft || publishing) return;
 
     try {
       const res = await fetch("/api/publish-post", {
@@ -236,7 +248,7 @@ function HomeContent() {
                 <textarea
                   className="w-full p-2 border border-neutral-200 rounded-lg"
                   rows={2}
-                  placeholder="Ask the AI to improve the post..."
+                  placeholder="Ask the AI to improve the post, or say “looks good, publish it” to publish..."
                   value={instruction}
                   onChange={(e) => setInstruction(e.target.value)}
                 />
@@ -251,12 +263,43 @@ function HomeContent() {
 
               <button
                 type="button"
-                onClick={handlePublish}
-                className="h-10 px-5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-500 transition-colors mt-2"
+                onClick={() => setShowConfirm(true)}
+                disabled={publishing}
+                className="h-10 px-5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-500 disabled:opacity-50 transition-colors mt-2"
               >
-                Publish to LinkedIn
+                {publishing ? "Publishing..." : "Publish to LinkedIn"}
               </button>
+
+              {showConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-lg p-6 max-w-sm w-full space-y-4">
+                    <h3 className="text-lg font-semibold">Confirm Publish</h3>
+                    <p>Are you sure you want to publish this post to LinkedIn?</p>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setShowConfirm(false)}
+                        className="px-4 py-2 rounded-lg border border-neutral-300 text-sm"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setShowConfirm(false);
+                          setPublishing(true);
+                          await handlePublish();
+                          setPublishing(false);
+                        }}
+                        className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm hover:bg-green-500"
+                      >
+                        Yes, Publish
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
+
+
           )}
         </main>
       </div>
