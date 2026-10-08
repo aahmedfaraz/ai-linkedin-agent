@@ -20,7 +20,7 @@ export async function generateWithGroq(messages: {role: "user"|"assistant"; cont
   `;
 
   const completion = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
+    model: "openai/gpt-oss-120b",
     messages: [
       { role: "system", content: systemPrompt },
       ...messages
